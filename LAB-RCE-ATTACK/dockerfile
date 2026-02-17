@@ -1,0 +1,48 @@
+FROM node:20-alpine AS base
+WORKDIR /app
+RUN corepack enable pnpm
+RUN apk add --no-cache libc6-compat bash
+
+FROM base AS builder
+
+RUN rm -rf /app/*
+
+RUN pnpm create next-app@15.0.4 . \
+    --yes \
+    --use-pnpm \
+    --ts \
+    --app \
+    --no-tailwind \
+    --no-eslint \
+    --no-src-dir \
+    --import-alias "@/*"
+
+RUN printf "/** @type {import('next').NextConfig} */\nmodule.exports = { output: 'standalone'}\n" \
+    > next.config.js
+
+RUN pnpm install
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN pnpm build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat bash
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+
+RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
+
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+
+EXPOSE 3000
+CMD ["node", "server.js"]

