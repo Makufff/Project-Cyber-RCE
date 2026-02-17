@@ -33,9 +33,14 @@ WORKDIR /home/secspace
 USER secspace
 
 RUN npx create-next-app@15.0.4 app \
+    --yes \
     --use-npm \
+    --typescript \
+    --eslint \
+    --app \
     --no-tailwind \
-    --eslint
+    --no-src-dir \
+    --import-alias "@/*"
 
 WORKDIR /home/secspace/app
 
@@ -48,7 +53,9 @@ ENV NODE_ENV=production
 RUN npm run build
 
 # Prepare standalone directory
-RUN cp -r public .next/standalone/public || true && \
+RUN mkdir -p .next/standalone/public && \
+    mkdir -p .next/standalone/.next && \
+    cp -r public/* .next/standalone/public/ || true && \
     cp -r .next/static .next/standalone/.next/static || true
 
 USER root
@@ -109,4 +116,4 @@ EXPOSE 22 3000
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-CMD ["/bin/bash", "-c", "/usr/sbin/sshd && su - secspace -c 'cd /home/secspace/app/.next/standalone && HOSTNAME=0.0.0.0 node server.js'"]
+CMD ["/bin/bash", "-c", "/usr/sbin/sshd && su - secspace -c 'cd /home/secspace/app/.next/standalone && PORT=3000 HOSTNAME=0.0.0.0 node server.js'"]
