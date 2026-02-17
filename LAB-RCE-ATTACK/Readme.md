@@ -2,7 +2,7 @@
 
 This document explains the Remote Code Execution (RCE) vulnerability related to the Next.js Flight Protocol (React Server Components) and how to perform the injection.
 
-## 🔍 Detection Logic (Translated)
+## Detection Logic (Translated)
 
 The following detection logic is extracted from the `RSC_Detector` tool, translated for clarity:
 
@@ -19,7 +19,7 @@ The following detection logic is extracted from the `RSC_Detector` tool, transla
 
 ---
 
-## 🚀 Injection Method
+## Injection Method
 
 The exploit leverages a prototype pollution or a specific deserialization flaw in the React Flight Protocol to execute arbitrary commands on the server.
 
@@ -33,7 +33,7 @@ The exploit leverages a prototype pollution or a specific deserialization flaw i
   Content-Type: multipart/form-data; boundary=----WebKitFormBoundary...
   ```
 
-### 2. Payload Breakdown
+### Payload Breakdown
 
 The core of the attack is a malformed JSON object passed as a form-data field.
 
@@ -54,7 +54,7 @@ The core of the attack is a malformed JSON object passed as a form-data field.
 }
 ```
 
-### 3. How it Works
+### How it Works
 
 1. **Prototype Trigger**: The payload manipulates the `__proto__` and `constructor` to achieve execution context.
 2. **Command Execution**: The `_prefix` field contains the malicious JavaScript code that uses `child_process.execSync` to run the target command.

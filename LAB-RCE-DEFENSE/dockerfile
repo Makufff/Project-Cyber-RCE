@@ -1,45 +1,58 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Bangkok
 ENV NODE_ENV=development
 
-RUN apt update && apt install -y \
-    openssh-server \
-    curl \
-    git \
-    nano \
-    sudo \
-    ca-certificates \
-    tini \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y unminimize \
+    && rm -rf /var/lib/apt/lists/* \
+    && yes | unminimize
+
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y openssh-server apt-file apt-utils iproute2 iputils-ping sudo htop iputils* acl tzdata net-tools vim nano acl curl git tini
 
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt install -y nodejs
+    && apt-get install -y nodejs
 
-RUN mkdir /var/run/sshd
+RUN adduser --disabled-password --gecos 'SecSpace at ITKMITL' secspace
 
-RUN useradd -m -s /bin/bash dev && \
-    echo "dev:devpassword" | chpasswd && \
-    usermod -aG sudo dev
+RUN echo 'secspace:secspace' | chpasswd && \
+    echo 'root:supersecret_password' | chpasswd
 
-RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
-    sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN mkdir /var/run/sshd && \
+    sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so@g' -i /etc/pam.d/sshd && \
+    echo "export VISIBLE=now" >> /etc/profile && \
+    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 
-WORKDIR /home/dev
-RUN chown -R dev:dev /home/dev
+RUN echo 'secspace ALL=(ALL) NOPASSWD: ALL' | tee -a /etc/sudoers
 
-USER dev
+WORKDIR /home/secspace
+
+USER secspace
 
 RUN npx create-next-app@15.0.4 app \
     --use-npm \
     --no-tailwind \
     --eslint
 
-WORKDIR /home/dev/app
+WORKDIR /home/secspace/app
 
-ENV RNG_SECRET=cve{nextjs-flight-protocol-issue-defended}
+RUN printf "/** @type {import('next').NextConfig} */\nconst nextConfig = { output: 'standalone' };\nmodule.exports = nextConfig;\n" > next.config.js
 
-# Create submission tool
+RUN npm install
+
+ENV NODE_ENV=production
+
+RUN npm run build
+
+# Prepare standalone directory
+RUN cp -r public .next/standalone/public || true && \
+    cp -r .next/static .next/standalone/.next/static || true
+
+USER root
+
 RUN printf '#!/usr/bin/env node\n\
 const secret = process.env.RNG_SECRET;\n\
 const payload = JSON.stringify({\n\
@@ -90,9 +103,10 @@ fetch("http://localhost:3000/adfa", {\n\
 });\n\
 ' > /usr/local/bin/submit && chmod +x /usr/local/bin/submit
 
-USER root
+ENV RNG_SECRET=cve{nextjs-flight-protocol-issue-defended}
 
 EXPOSE 22 3000
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD /usr/sbin/sshd && su - dev -c "cd /home/dev/app && npm run dev -- -p 3000"
+
+CMD ["/bin/bash", "-c", "/usr/sbin/sshd && su - secspace -c 'cd /home/secspace/app/.next/standalone && HOSTNAME=0.0.0.0 node server.js'"]
