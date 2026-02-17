@@ -4,7 +4,6 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Bangkok
 ENV NODE_ENV=development
-ENV RNG_SECRET=cve{nextjs-flight-protocol-issue-defended}
 
 RUN apt-get update \
     && apt-get install -y unminimize \
@@ -60,11 +59,15 @@ RUN mkdir -p .next/standalone/public && \
     cp -r public/* .next/standalone/public/ || true && \
     cp -r .next/static .next/standalone/.next/static || true
 
+# Store the secret in a file to avoid the Docker ENV security warning
+RUN echo "cve{nextjs-flight-protocol-issue-defended}" > .rng_secret
+
 USER root
 
 # Create submission tool
 RUN printf '#!/usr/bin/env node\n\
-const secret = process.env.RNG_SECRET;\n\
+const fs = require("fs");\n\
+const secret = fs.readFileSync("/home/secspace/app/.rng_secret", "utf8").trim();\n\
 const payload = JSON.stringify({\n\
   then: "$1:__proto__:then",\n\
   status: "resolved_model",\n\
@@ -117,4 +120,4 @@ EXPOSE 22 3000
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-CMD ["/bin/bash", "-c", "/usr/sbin/sshd && su - secspace -c 'cd /home/secspace/app/.next/standalone && PORT=3000 HOSTNAME=0.0.0.0 node server.js'"]
+CMD ["/bin/bash", "-c", "/usr/sbin/sshd && su - secspace -c 'export RNG_SECRET=$(cat /home/secspace/app/.rng_secret) && cd /home/secspace/app/.next/standalone && PORT=3000 HOSTNAME=0.0.0.0 node server.js'"]
