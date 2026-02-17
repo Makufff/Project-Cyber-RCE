@@ -16,16 +16,20 @@ RUN apt-get update && apt-get upgrade -y && \
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs
 
-RUN adduser --disabled-password --gecos 'SecSpace at ITKMITL' secspace
-
-RUN echo 'secspace:secspace' | chpasswd && \
-    echo 'root:supersecret_password' | chpasswd
+# Create user and set passwords
+RUN useradd -m -s /bin/bash secspace && \
+    echo 'secspace:secspace' | chpasswd && \
+    usermod -aG sudo secspace && \
+    usermod -U secspace && \
+    echo 'root:supersecret_password' | chpasswd && \
+    usermod -U root
 
 RUN mkdir /var/run/sshd && \
-    sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/^#\(PermitRootLogin \).*/\1yes/' /etc/ssh/sshd_config && \
+    sed -i 's/^#\(PasswordAuthentication \).*/\1yes/' /etc/ssh/sshd_config && \
+    sed -i 's/^#\(KbdInteractiveAuthentication \).*/\1yes/' /etc/ssh/sshd_config && \
     sed 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so@g' -i /etc/pam.d/sshd && \
-    echo "export VISIBLE=now" >> /etc/profile && \
-    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+    echo "export VISIBLE=now" >> /etc/profile
 
 RUN echo 'secspace ALL=(ALL) NOPASSWD: ALL' | tee -a /etc/sudoers
 
