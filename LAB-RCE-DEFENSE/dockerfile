@@ -12,8 +12,8 @@ RUN apt-get update \
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y openssh-server apt-file apt-utils iproute2 iputils-ping sudo htop iputils* acl tzdata net-tools vim nano acl curl git tini tmux
 
-RUN curl -fsSL https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.xz \
-    | tar -xJf - -C /usr/local --strip-components=1 --no-same-owner
+RUN curl -fsSL https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.gz \
+    | tar -xzf - -C /usr/local --strip-components=1 --no-same-owner
 
 RUN useradd -m -s /bin/bash secspace && \
     echo 'secspace:secspace' | chpasswd && \
