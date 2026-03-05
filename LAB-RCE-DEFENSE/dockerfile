@@ -33,9 +33,7 @@ RUN echo 'secspace ALL=(ALL) NOPASSWD: ALL' | tee -a /etc/sudoers
 
 WORKDIR /home/secspace
 
-USER secspace
-
-RUN /usr/bin/npx create-next-app@15.0.4 app \
+RUN npm exec -- create-next-app@15.0.4 app \
     --yes \
     --use-npm \
     --typescript \
@@ -43,7 +41,10 @@ RUN /usr/bin/npx create-next-app@15.0.4 app \
     --app \
     --no-tailwind \
     --no-src-dir \
-    --import-alias "@/*"
+    --import-alias "@/*" \
+    && chown -R secspace:secspace app
+
+USER secspace
 
 WORKDIR /home/secspace/app
 
