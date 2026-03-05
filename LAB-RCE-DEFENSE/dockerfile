@@ -1,7 +1,5 @@
-# syntax=docker/dockerfile:1
 FROM ubuntu:24.04
 
-# Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Bangkok
 ENV NODE_ENV=development
@@ -17,7 +15,6 @@ RUN apt-get update && apt-get upgrade -y && \
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs
 
-# Create user and set passwords
 RUN useradd -m -s /bin/bash secspace && \
     echo 'secspace:secspace' | chpasswd && \
     usermod -aG sudo secspace && \
@@ -38,7 +35,7 @@ WORKDIR /home/secspace
 
 USER secspace
 
-RUN npx create-next-app@15.0.4 app \
+RUN /usr/bin/npx create-next-app@15.0.4 app \
     --yes \
     --use-npm \
     --typescript \
@@ -52,15 +49,12 @@ WORKDIR /home/secspace/app
 
 RUN npm install
 
-# Store the secret in a file to avoid the Docker ENV security warning
 RUN echo "cve{nextjs-flight-protocol-issue-defended}" > .rng_secret
 
 USER root
 
-# Switch to bash shell so heredoc works reliably
 SHELL ["/bin/bash", "-c"]
 
-# Create the submission tool inline
 RUN cat > /usr/local/bin/submit <<'SCRIPT'
 #!/bin/bash
 # Get the secret from the protected file
@@ -86,12 +80,10 @@ SCRIPT
 
 RUN chmod +x /usr/local/bin/submit
 
-# Switch back to default shell
 SHELL ["/bin/sh", "-c"]
 
 EXPOSE 22 3000
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-# Start SSH and the Next.js dev server inside a tmux session
 CMD ["/bin/bash", "-c", "/usr/sbin/sshd && su - secspace -c 'tmux new-session -d -s nextjs \"export RNG_SECRET=$(cat /home/secspace/app/.rng_secret) && cd /home/secspace/app && npm run dev\"' && tail -f /dev/null"]
