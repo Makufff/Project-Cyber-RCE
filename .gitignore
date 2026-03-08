@@ -1,0 +1,53 @@
+# ========================
+# OS & System Files
+# ========================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.Spotlight-V100
+.Trashes
+
+# ========================
+# IDE & Editor
+# ========================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ========================
+# LaTeX Build Artifacts
+# ========================
+Documents/*.aux
+Documents/*.bbl
+Documents/*.bcf
+Documents/*.blg
+Documents/*.fdb_latexmk
+Documents/*.fls
+Documents/*.lof
+Documents/*.log
+Documents/*.lot
+Documents/*.out
+Documents/*.run.xml
+Documents/*.synctex.gz
+Documents/*.toc
+
+# ========================
+# Docker
+# ========================
+.dockerignore
+docker-compose.override.yml
+
+# ========================
+# Browser Extension
+# ========================
+RSC_Detector/_metadata/
+
+# ========================
+# Misc
+# ========================
+*.log
+*.tmp
+*.bak
